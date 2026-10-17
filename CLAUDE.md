@@ -16,8 +16,8 @@ its only runtime dependency. It started from the official JavaScript template.
 ```bash
 npm install
 npm test                                  # node --test, the built-in runner
-node --test test/devices.test.js          # one file
-node --test --test-name-pattern "plug"    # tests whose name matches
+node --test test/hub.test.js              # one file
+node --test --test-name-pattern "widget"  # tests whose name matches
 npm run lint                              # ESLint
 npm run format:check                      # Prettier, as the CI runs it
 npm run format                            # Prettier, fix in place
@@ -31,16 +31,20 @@ pushing.
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
+index.js                          SDK wiring only: src/app.js registers the handlers before connect()
+src/app.js                        every SDK handler -> the hub (also used by the tests)
+src/hub.js                        reading timer, states, transitions -> scene events, views
+src/devices.js                    the Traefik device + one device per HTTP service: features, names, values
+src/traefik/client.js             /api/version + /api/rawdata (fetch), errors by kind, normalization
 src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
+src/widgets.js                    dashboard widget `traefik` (manifest `widgets`)
+src/texts.js                      connection, error, state, report and action texts (4 languages)
 src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
+src/store.js, src/problems.js     /data/traefik-state.json; one log line per repeated failure
 gladys-assistant-integration.json manifest: name, config_schema, actions, image...
-docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
+docs/{en,fr,de,es}.md             user documentation, re-hosted by Gladys (en and fr mandatory)
 test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
+                                  and helpers/fakeTraefik.js (built on test/fixtures/traefik)
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
 
@@ -70,8 +74,9 @@ test/                             node --test, against the SDK's fake Gladys (in
   `type: "provider"`: 5.1.0). `test/manifest.test.js` ties the manifest to the
   code (defaults, action, scene and widget handlers): change both sides
   together.
-- **User-facing text** is bilingual (English and French): action messages,
-  manifest texts, and `docs/en.md` / `docs/fr.md`, kept in sync.
+- **User-facing text** exists in English, French, German and Spanish: action
+  messages, widget texts, feature names, manifest texts, and
+  `docs/{en,fr,de,es}.md` with the same sections (`test/i18n.test.js`).
 - **Style.** Prettier formats, ESLint catches mistakes. Comments explain why,
   in English. Tests never touch the network.
 
@@ -233,3 +238,40 @@ long, et sur un « Sie »/« Ihr… » de politesse en allemand. Le store exige 
 - Docs `en`, `fr`, `de`, `es` avec les mêmes sections.
 - Chauffe, ouverture, sécurité : ne rien rendre pilotable « comme un thermostat » ou par un assistant
   vocal quand une erreur serait dangereuse (leçon d'OctoPrint).
+
+## Traefik (propre à ce dépôt)
+
+Vérifié le 17/10/2026 sur `traefik:v3` (v3.7.15) en Docker, provider fichier, deux `traefik/whoami`
+derrière un health check, un routeur vers un service absent, un vers un middleware absent, l'API
+derrière une basic auth (`{SHA}`) :
+
+- **`/api/rawdata`** donne tout en une requête et sans pagination : `routers`, `services`,
+  `middlewares`, `tcpRouters`, `tcpServices`, `udp…`, en objets indexés par `nom@provider`, avec
+  `status` (`enabled`, `warning`, `disabled`), `error` (liste de textes) et, pour un load balancer,
+  `serverStatus` (`UP`/`DOWN` par URL). Les routes `/api/http/*` sont paginées (`X-Next-Page`) :
+  ne pas s'en servir. `/api/overview` compte exactement ce que l'intégration recompte depuis
+  `rawdata` (fixture `v3.7-overview.json`, test dans `client.test.js`).
+- **Sans health check, un serveur reste `UP`** même si le backend répond 500 ou est arrêté. Un
+  service dont tous les serveurs sont `DOWN` garde `status: enabled` : la panne se lit dans
+  `serverStatus`, pas dans `status`.
+- Basic auth vérifiée par l'API servie via un routeur (`api@internal` + `basicAuth`) : 401 sans
+  identifiants, réponses identiques à celles du port 8080 avec.
+- Un **routeur en erreur** a `status: disabled` et son message dans `error` (« the service
+  "x@file" does not exist », « middleware "y@file" does not exist »).
+- Un service **retiré** de la configuration disparaît de `rawdata` (vérifié en retirant un service
+  du fichier ; avec le provider Docker, c'est ce qui arrive quand on arrête un conteneur, d'après la
+  doc de Traefik, non rejoué ici) : l'intégration compte un service disparu comme en panne (`missing`), le garde comme
+  appareil s'il est ajouté à Gladys, et oublie sinon son état après 7 jours.
+- Services `@internal` (`api`, `dashboard`, `noop`) écartés des appareils, mais comptés dans les
+  totaux, comme le fait le tableau de bord de Traefik.
+- `rawdata` contient la configuration des middlewares (hachés de basic auth compris) : n'en rien
+  journaliser ni publier.
+- Le déclencheur « Traefik est injoignable » attend **deux lectures en échec de suite** : un
+  redémarrage de Traefik (quelques secondes) ne doit pas réveiller les scènes. De même, un service
+  ne compte comme disparu, et un routeur nouvellement en erreur n'est annoncé, qu'à la **deuxième
+  lecture** de suite : juste après son redémarrage, Traefik répond avant que ses providers (Docker…)
+  aient envoyé leur configuration (relecture indépendante, non rejoué ici).
+- `applySuccess` met à jour l'état sans `await` puis tire les événements : une configuration
+  changée pendant une lecture ne doit pas mêler l'ancien Traefik au nouveau.
+- Changer d'adresse d'API repart de zéro (l'adresse est stockée dans `/data`) : pas de « service en
+  panne » pour les services de l'ancien Traefik.

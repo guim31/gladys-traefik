@@ -1,0 +1,230 @@
+{
+  "routers": {
+    "api@internal": {
+      "entryPoints": ["traefik"],
+      "service": "api@internal",
+      "rule": "PathPrefix(`/api`)",
+      "ruleSyntax": "default",
+      "priority": 9223372036854775806,
+      "observability": {
+        "accessLogs": true,
+        "metrics": true,
+        "tracing": true,
+        "traceVerbosity": "minimal"
+      },
+      "status": "enabled",
+      "using": ["traefik"]
+    },
+    "app@file": {
+      "entryPoints": ["web"],
+      "middlewares": ["secure-headers@file"],
+      "service": "app",
+      "rule": "Host(`app.example.test`)",
+      "priority": 24,
+      "observability": {
+        "accessLogs": true,
+        "metrics": true,
+        "tracing": true,
+        "traceVerbosity": "minimal"
+      },
+      "status": "enabled",
+      "using": ["web"]
+    },
+    "broken-mw@file": {
+      "entryPoints": ["web"],
+      "middlewares": ["missing-mw@file"],
+      "service": "single",
+      "rule": "Host(`mw.example.test`)",
+      "priority": 23,
+      "observability": {
+        "accessLogs": true,
+        "metrics": true,
+        "tracing": true,
+        "traceVerbosity": "minimal"
+      },
+      "error": ["middleware \"missing-mw@file\" does not exist"],
+      "status": "disabled",
+      "using": ["web"]
+    },
+    "broken@file": {
+      "entryPoints": ["web"],
+      "service": "missing-service",
+      "rule": "Host(`broken.example.test`)",
+      "priority": 27,
+      "observability": {
+        "accessLogs": true,
+        "metrics": true,
+        "tracing": true,
+        "traceVerbosity": "minimal"
+      },
+      "error": ["the service \"missing-service@file\" does not exist"],
+      "status": "disabled",
+      "using": ["web"]
+    },
+    "dashboard@file": {
+      "entryPoints": ["admin"],
+      "middlewares": ["auth@file"],
+      "service": "api@internal",
+      "rule": "PathPrefix(`/api`) || PathPrefix(`/dashboard`)",
+      "priority": 46,
+      "observability": {
+        "accessLogs": true,
+        "metrics": true,
+        "tracing": true,
+        "traceVerbosity": "minimal"
+      },
+      "status": "enabled",
+      "using": ["admin"]
+    },
+    "dashboard@internal": {
+      "entryPoints": ["traefik"],
+      "middlewares": ["dashboard_redirect@internal", "dashboard_stripprefix@internal"],
+      "service": "dashboard@internal",
+      "rule": "PathPrefix(`/`)",
+      "ruleSyntax": "default",
+      "priority": 9223372036854775805,
+      "observability": {
+        "accessLogs": true,
+        "metrics": true,
+        "tracing": true,
+        "traceVerbosity": "minimal"
+      },
+      "status": "enabled",
+      "using": ["traefik"]
+    },
+    "single@file": {
+      "entryPoints": ["web"],
+      "service": "single",
+      "rule": "Host(`single.example.test`)",
+      "priority": 27,
+      "observability": {
+        "accessLogs": true,
+        "metrics": true,
+        "tracing": true,
+        "traceVerbosity": "minimal"
+      },
+      "status": "enabled",
+      "using": ["web"]
+    }
+  },
+  "middlewares": {
+    "auth@file": {
+      "basicAuth": {
+        "users": ["gladys:$apr1$Qp3b6n3y$8vG0Qo0vC2Y7q1x8nF9Z8/"]
+      },
+      "status": "enabled",
+      "usedBy": ["dashboard@file"]
+    },
+    "dashboard_redirect@internal": {
+      "redirectRegex": {
+        "regex": "^(http:\\/\\/(\\[[\\w:.]+\\]|[\\w\\._-]+)(:\\d+)?)\\/$",
+        "replacement": "${1}/dashboard/",
+        "permanent": true
+      },
+      "status": "enabled",
+      "usedBy": ["dashboard@internal"]
+    },
+    "dashboard_stripprefix@internal": {
+      "stripPrefix": {
+        "prefixes": ["/dashboard/", "/dashboard"]
+      },
+      "status": "enabled",
+      "usedBy": ["dashboard@internal"]
+    },
+    "secure-headers@file": {
+      "headers": {
+        "frameDeny": true
+      },
+      "status": "enabled",
+      "usedBy": ["app@file"]
+    }
+  },
+  "services": {
+    "api@internal": {
+      "status": "enabled",
+      "usedBy": ["api@internal", "dashboard@file"]
+    },
+    "app@file": {
+      "loadBalancer": {
+        "servers": [
+          {
+            "url": "http://gladys-test-traefik-whoami1:80"
+          },
+          {
+            "url": "http://gladys-test-traefik-whoami2:80"
+          }
+        ],
+        "strategy": "wrr",
+        "healthCheck": {
+          "mode": "http",
+          "path": "/health",
+          "interval": "2s",
+          "timeout": "1s",
+          "followRedirects": true
+        },
+        "passHostHeader": true,
+        "responseForwarding": {
+          "flushInterval": "100ms"
+        }
+      },
+      "status": "enabled",
+      "usedBy": ["app@file"],
+      "serverStatus": {
+        "http://gladys-test-traefik-whoami1:80": "UP",
+        "http://gladys-test-traefik-whoami2:80": "UP"
+      }
+    },
+    "dashboard@internal": {
+      "status": "enabled",
+      "usedBy": ["dashboard@internal"]
+    },
+    "noop@internal": {
+      "status": "enabled"
+    },
+    "single@file": {
+      "loadBalancer": {
+        "servers": [
+          {
+            "url": "http://gladys-test-traefik-whoami1:80"
+          }
+        ],
+        "strategy": "wrr",
+        "passHostHeader": true,
+        "responseForwarding": {
+          "flushInterval": "100ms"
+        }
+      },
+      "status": "enabled",
+      "usedBy": ["broken-mw@file", "single@file"],
+      "serverStatus": {
+        "http://gladys-test-traefik-whoami1:80": "UP"
+      }
+    }
+  },
+  "tcpRouters": {
+    "db@file": {
+      "entryPoints": ["tcp"],
+      "service": "db",
+      "rule": "HostSNI(`*`)",
+      "priority": -1,
+      "status": "enabled",
+      "using": ["tcp"]
+    }
+  },
+  "tcpServices": {
+    "db@file": {
+      "loadBalancer": {
+        "servers": [
+          {
+            "address": "gladys-test-traefik-whoami2:80"
+          }
+        ]
+      },
+      "status": "enabled",
+      "usedBy": ["db@file"],
+      "serverStatus": {
+        "gladys-test-traefik-whoami2:80": "UP"
+      }
+    }
+  }
+}

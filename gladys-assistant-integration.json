@@ -1,177 +1,697 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "Traefik",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Your Traefik reverse proxy in Gladys: services up or down, routers in error, alerts in scenes.",
+    "fr": "Votre reverse proxy Traefik dans Gladys : services en panne, routeurs en erreur, alertes en scène.",
+    "de": "Dein Traefik-Reverse-Proxy in Gladys: ausgefallene Dienste, Router-Fehler, Alarme in Szenen.",
+    "es": "Su proxy inverso Traefik en Gladys: servicios caídos, routers con error, alertas en escenas."
   },
   "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "docker_image": "ghcr.io/guim31/gladys-traefik:1.0.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/guim31/gladys-traefik/main/cover.png",
+  "categories": ["network"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "Your Traefik API",
+        "fr": "Votre API Traefik",
+        "de": "Deine Traefik-API",
+        "es": "Su API de Traefik"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "Enable the Traefik API: api.insecure=true serves it on port 8080, or a router to api@internal serves it on your domain, often behind basic auth. Then add the services to follow from the Discover tab.",
+        "fr": "Activez l'API de Traefik : api.insecure=true la sert sur le port 8080, ou un routeur vers api@internal la sert sur votre domaine, souvent derrière une basic auth. Ajoutez ensuite les services à suivre depuis l'onglet Découverte.",
+        "de": "Aktiviere die Traefik-API: api.insecure=true stellt sie auf Port 8080 bereit, oder ein Router zu api@internal auf deiner Domain, oft hinter Basic Auth. Lege dann die Dienste im Tab „Entdecken“ an.",
+        "es": "Active la API de Traefik: api.insecure=true la sirve en el puerto 8080, o un router hacia api@internal la sirve en su dominio, a menudo tras basic auth. Después añada los servicios desde la pestaña Descubrir."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://github.com/guim31/gladys-traefik/blob/main/docs/en.md",
+          "label": {
+            "en": "Setup guide",
+            "fr": "Guide d'installation",
+            "de": "Einrichtungsanleitung",
+            "es": "Guía de instalación"
+          }
+        },
+        {
+          "url": "https://doc.traefik.io/traefik/operations/api/",
+          "label": {
+            "en": "Traefik API",
+            "fr": "API de Traefik",
+            "de": "Traefik-API",
+            "es": "API de Traefik"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+      "key": "url",
+      "type": "string",
+      "label": {
+        "en": "API address",
+        "fr": "Adresse de l'API",
+        "de": "Adresse der API",
+        "es": "Dirección de la API"
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "description": {
+        "en": "The address of the Traefik dashboard or API, without /dashboard.",
+        "fr": "L'adresse du tableau de bord ou de l'API de Traefik, sans /dashboard.",
+        "de": "Die Adresse des Traefik-Dashboards oder der API, ohne /dashboard.",
+        "es": "La dirección del panel o de la API de Traefik, sin /dashboard."
+      },
+      "placeholder": {
+        "en": "e.g. http://192.168.1.2:8080",
+        "fr": "ex. http://192.168.1.2:8080",
+        "de": "z. B. http://192.168.1.2:8080",
+        "es": "p. ej. http://192.168.1.2:8080"
+      },
+      "required": false
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+      "key": "username",
+      "type": "string",
+      "label": {
+        "en": "User (basic auth)",
+        "fr": "Utilisateur (basic auth)",
+        "de": "Benutzer (Basic Auth)",
+        "es": "Usuario (basic auth)"
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "description": {
+        "en": "Only when the router of the API asks for a basic auth. Leave empty otherwise.",
+        "fr": "Seulement si le routeur de l'API demande une basic auth. Sinon, laissez vide.",
+        "de": "Nur wenn der Router der API Basic Auth verlangt. Sonst leer lassen.",
+        "es": "Solo si el router de la API pide basic auth. Si no, déjelo vacío."
+      },
+      "required": false
     },
     {
-      "key": "unit",
+      "key": "password",
+      "type": "secret",
+      "label": {
+        "en": "Password (basic auth)",
+        "fr": "Mot de passe (basic auth)",
+        "de": "Passwort (Basic Auth)",
+        "es": "Contraseña (basic auth)"
+      },
+      "required": false
+    },
+    {
+      "key": "options",
+      "type": "section",
+      "label": {
+        "en": "Options",
+        "fr": "Options",
+        "de": "Optionen",
+        "es": "Opciones"
+      }
+    },
+    {
+      "key": "poll_interval",
       "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
+      "label": {
+        "en": "Refresh interval",
+        "fr": "Intervalle de rafraîchissement",
+        "de": "Aktualisierungsintervall",
+        "es": "Intervalo de actualización"
+      },
+      "description": {
+        "en": "How often Traefik is read: two light API requests each time.",
+        "fr": "À quelle fréquence Traefik est lu : deux requêtes d'API légères à chaque fois.",
+        "de": "Wie oft Traefik gelesen wird: jedes Mal zwei leichte API-Anfragen.",
+        "es": "Con qué frecuencia se lee Traefik: dos peticiones ligeras a la API cada vez."
+      },
       "required": false,
-      "default": "celsius",
+      "default": "60",
       "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
+        {
+          "value": "30",
+          "label": {
+            "en": "30 seconds",
+            "fr": "30 secondes",
+            "de": "30 Sekunden",
+            "es": "30 segundos"
+          }
+        },
+        {
+          "value": "60",
+          "label": {
+            "en": "1 minute",
+            "fr": "1 minute",
+            "de": "1 Minute",
+            "es": "1 minuto"
+          }
+        },
+        {
+          "value": "120",
+          "label": {
+            "en": "2 minutes",
+            "fr": "2 minutes",
+            "de": "2 Minuten",
+            "es": "2 minutos"
+          }
+        },
+        {
+          "value": "300",
+          "label": {
+            "en": "5 minutes",
+            "fr": "5 minutes",
+            "de": "5 Minuten",
+            "es": "5 minutos"
+          }
+        }
       ]
     },
     {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "key": "language",
+      "type": "select",
+      "label": {
+        "en": "Language of the names",
+        "fr": "Langue des noms",
+        "de": "Sprache der Namen",
+        "es": "Idioma de los nombres"
+      },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "Language of the feature names (set when a device is added) and of the scene results.",
+        "fr": "Langue des noms des fonctionnalités (fixés à l'ajout d'un appareil) et des résultats de scène.",
+        "de": "Sprache der Funktionsnamen (beim Anlegen eines Geräts festgelegt) und der Szenen-Ergebnisse.",
+        "es": "Idioma de los nombres de las funciones (fijados al añadir un dispositivo) y de los resultados de escena."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": "fr",
+      "options": [
+        {
+          "value": "en",
+          "label": {
+            "en": "English",
+            "fr": "Anglais",
+            "de": "Englisch",
+            "es": "Inglés"
+          }
+        },
+        {
+          "value": "fr",
+          "label": {
+            "en": "French",
+            "fr": "Français",
+            "de": "Französisch",
+            "es": "Francés"
+          }
+        },
+        {
+          "value": "de",
+          "label": {
+            "en": "German",
+            "fr": "Allemand",
+            "de": "Deutsch",
+            "es": "Alemán"
+          }
+        },
+        {
+          "value": "es",
+          "label": {
+            "en": "Spanish",
+            "fr": "Espagnol",
+            "de": "Spanisch",
+            "es": "Español"
+          }
+        }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
+      "key": "test_connection",
+      "label": {
+        "en": "Test the connection",
+        "fr": "Tester la connexion",
+        "de": "Verbindung testen",
+        "es": "Probar la conexión"
+      },
       "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
     }
   ],
   "scene_triggers": [
     {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
+      "key": "service_down",
+      "label": {
+        "en": "A service goes down",
+        "fr": "Un service tombe en panne",
+        "de": "Ein Dienst fällt aus",
+        "es": "Un servicio cae"
+      },
       "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
+        "en": "An HTTP service no longer has any server up (failed health checks), or is gone from Traefik.",
+        "fr": "Un service HTTP n'a plus aucun serveur en service (health check en échec), ou a disparu de Traefik.",
+        "de": "Ein HTTP-Dienst hat keinen erreichbaren Server mehr (Health Check fehlgeschlagen) oder ist aus Traefik verschwunden.",
+        "es": "Un servicio HTTP ya no tiene ningún servidor activo (health check fallido), o ha desaparecido de Traefik."
       },
       "fields": [
         {
           "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
           "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
+          "label": {
+            "en": "Services (empty: any)",
+            "fr": "Services (vide : tous)",
+            "de": "Dienste (leer: alle)",
+            "es": "Servicios (vacío: todos)"
+          },
+          "source": "devices"
         }
       ],
       "variables": [
         {
-          "key": "target",
+          "key": "service",
           "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
+          "label": {
+            "en": "Service name",
+            "fr": "Nom du service",
+            "de": "Name des Dienstes",
+            "es": "Nombre del servicio"
+          }
+        },
+        {
+          "key": "provider",
+          "type": "string",
+          "label": {
+            "en": "Provider",
+            "fr": "Fournisseur",
+            "de": "Provider",
+            "es": "Proveedor"
+          }
+        },
+        {
+          "key": "servers_up",
+          "type": "number",
+          "label": {
+            "en": "Servers up",
+            "fr": "Serveurs en service",
+            "de": "Erreichbare Server",
+            "es": "Servidores activos"
+          }
+        },
+        {
+          "key": "servers_total",
+          "type": "number",
+          "label": {
+            "en": "Servers in total",
+            "fr": "Serveurs au total",
+            "de": "Server insgesamt",
+            "es": "Servidores en total"
+          }
+        },
+        {
+          "key": "missing",
+          "type": "boolean",
+          "label": {
+            "en": "Gone from Traefik",
+            "fr": "Disparu de Traefik",
+            "de": "Aus Traefik verschwunden",
+            "es": "Desaparecido de Traefik"
+          }
+        }
+      ]
+    },
+    {
+      "key": "service_up",
+      "label": {
+        "en": "A service is back up",
+        "fr": "Un service est rétabli",
+        "de": "Ein Dienst läuft wieder",
+        "es": "Un servicio se restablece"
+      },
+      "description": {
+        "en": "A service that was down has a server up again, with the length of the outage.",
+        "fr": "Un service en panne a de nouveau un serveur en service, avec la durée de la panne.",
+        "de": "Ein ausgefallener Dienst hat wieder einen erreichbaren Server, mit der Dauer des Ausfalls.",
+        "es": "Un servicio caído vuelve a tener un servidor activo, con la duración de la caída."
+      },
+      "fields": [
+        {
+          "key": "device",
+          "type": "multi_select",
+          "label": {
+            "en": "Services (empty: any)",
+            "fr": "Services (vide : tous)",
+            "de": "Dienste (leer: alle)",
+            "es": "Servicios (vacío: todos)"
+          },
+          "source": "devices"
+        }
+      ],
+      "variables": [
+        {
+          "key": "service",
+          "type": "string",
+          "label": {
+            "en": "Service name",
+            "fr": "Nom du service",
+            "de": "Name des Dienstes",
+            "es": "Nombre del servicio"
+          }
+        },
+        {
+          "key": "provider",
+          "type": "string",
+          "label": {
+            "en": "Provider",
+            "fr": "Fournisseur",
+            "de": "Provider",
+            "es": "Proveedor"
+          }
+        },
+        {
+          "key": "servers_up",
+          "type": "number",
+          "label": {
+            "en": "Servers up",
+            "fr": "Serveurs en service",
+            "de": "Erreichbare Server",
+            "es": "Servidores activos"
+          }
+        },
+        {
+          "key": "servers_total",
+          "type": "number",
+          "label": {
+            "en": "Servers in total",
+            "fr": "Serveurs au total",
+            "de": "Server insgesamt",
+            "es": "Servidores en total"
+          }
+        },
+        {
+          "key": "downtime_minutes",
+          "type": "number",
+          "label": {
+            "en": "Outage length (minutes)",
+            "fr": "Durée de la panne (minutes)",
+            "de": "Dauer des Ausfalls (Minuten)",
+            "es": "Duración de la caída (minutos)"
+          }
+        }
+      ]
+    },
+    {
+      "key": "router_error",
+      "label": {
+        "en": "A router is in error",
+        "fr": "Un routeur passe en erreur",
+        "de": "Ein Router hat einen Fehler",
+        "es": "Un router tiene un error"
+      },
+      "description": {
+        "en": "A router of Traefik turns to error: missing service or middleware, bad rule, certificate resolver…",
+        "fr": "Un routeur de Traefik passe en erreur : service ou middleware manquant, règle invalide, résolveur de certificat…",
+        "de": "Ein Router von Traefik bekommt einen Fehler: fehlender Dienst oder Middleware, falsche Regel, Zertifikats-Resolver…",
+        "es": "Un router de Traefik pasa a error: servicio o middleware ausente, regla incorrecta, resolver de certificados…"
+      },
+      "variables": [
+        {
+          "key": "router",
+          "type": "string",
+          "label": {
+            "en": "Router name",
+            "fr": "Nom du routeur",
+            "de": "Name des Routers",
+            "es": "Nombre del router"
+          }
+        },
+        {
+          "key": "provider",
+          "type": "string",
+          "label": {
+            "en": "Provider",
+            "fr": "Fournisseur",
+            "de": "Provider",
+            "es": "Proveedor"
+          }
+        },
+        {
+          "key": "protocol",
+          "type": "string",
+          "label": {
+            "en": "Protocol (http, tcp, udp)",
+            "fr": "Protocole (http, tcp, udp)",
+            "de": "Protokoll (http, tcp, udp)",
+            "es": "Protocolo (http, tcp, udp)"
+          }
+        },
+        {
+          "key": "error",
+          "type": "string",
+          "label": {
+            "en": "Error message",
+            "fr": "Message d'erreur",
+            "de": "Fehlermeldung",
+            "es": "Mensaje de error"
+          }
+        }
+      ]
+    },
+    {
+      "key": "proxy_unreachable",
+      "label": {
+        "en": "Traefik is unreachable",
+        "fr": "Traefik est injoignable",
+        "de": "Traefik ist nicht erreichbar",
+        "es": "Traefik no es accesible"
+      },
+      "description": {
+        "en": "The Traefik API no longer answers, two reads in a row: the proxy is down, or the machine.",
+        "fr": "L'API de Traefik ne répond plus, deux lectures de suite : le proxy est arrêté, ou la machine.",
+        "de": "Die Traefik-API antwortet nicht mehr, zwei Abfragen in Folge: Der Proxy ist aus, oder der Rechner.",
+        "es": "La API de Traefik ya no responde, dos lecturas seguidas: el proxy está detenido, o la máquina."
+      },
+      "variables": [
+        {
+          "key": "error",
+          "type": "string",
+          "label": {
+            "en": "Reason",
+            "fr": "Raison",
+            "de": "Grund",
+            "es": "Motivo"
+          }
         }
       ]
     }
   ],
   "scene_actions": [
     {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
+      "key": "get_service_status",
+      "label": {
+        "en": "State of a service",
+        "fr": "État d'un service",
+        "de": "Zustand eines Dienstes",
+        "es": "Estado de un servicio"
       },
-      "timeout_seconds": 15,
+      "description": {
+        "en": "Reads the state of a service for the next actions: healthy or not, servers up, and a ready-made sentence.",
+        "fr": "Lit l'état d'un service pour les actions suivantes : en bonne santé ou non, serveurs en service, et une phrase toute prête.",
+        "de": "Liest den Zustand eines Dienstes für die nächsten Aktionen: funktionsfähig oder nicht, erreichbare Server und einen fertigen Satz.",
+        "es": "Lee el estado de un servicio para las siguientes acciones: en buen estado o no, servidores activos y una frase lista."
+      },
+      "timeout_seconds": 20,
       "fields": [
         {
           "key": "device",
           "type": "select",
+          "label": {
+            "en": "Service",
+            "fr": "Service",
+            "de": "Dienst",
+            "es": "Servicio"
+          },
           "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
           "required": true
         }
       ],
       "outputs": [
         {
-          "key": "signalled",
+          "key": "healthy",
           "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
+          "label": {
+            "en": "Healthy",
+            "fr": "En bonne santé",
+            "de": "Funktionsfähig",
+            "es": "En buen estado"
+          }
+        },
+        {
+          "key": "state",
+          "type": "string",
+          "label": {
+            "en": "State",
+            "fr": "État",
+            "de": "Zustand",
+            "es": "Estado"
+          }
+        },
+        {
+          "key": "servers_up",
+          "type": "number",
+          "label": {
+            "en": "Servers up",
+            "fr": "Serveurs en service",
+            "de": "Erreichbare Server",
+            "es": "Servidores activos"
+          }
+        },
+        {
+          "key": "servers_total",
+          "type": "number",
+          "label": {
+            "en": "Servers in total",
+            "fr": "Serveurs au total",
+            "de": "Server insgesamt",
+            "es": "Servidores en total"
+          }
+        },
+        {
+          "key": "sentence",
+          "type": "string",
+          "label": {
+            "en": "Sentence",
+            "fr": "Phrase",
+            "de": "Satz",
+            "es": "Frase"
+          }
+        }
+      ]
+    },
+    {
+      "key": "get_proxy_status",
+      "label": {
+        "en": "State of Traefik",
+        "fr": "État de Traefik",
+        "de": "Zustand von Traefik",
+        "es": "Estado de Traefik"
+      },
+      "description": {
+        "en": "Sums up the proxy for a message: reachable or not, services down and routers in error, with their names.",
+        "fr": "Résume le proxy pour un message : joignable ou non, services en panne et routeurs en erreur, avec leurs noms.",
+        "de": "Fasst den Proxy für eine Nachricht zusammen: erreichbar oder nicht, ausgefallene Dienste und Router mit Fehler, mit Namen.",
+        "es": "Resume el proxy para un mensaje: accesible o no, servicios caídos y routers con error, con sus nombres."
+      },
+      "timeout_seconds": 20,
+      "outputs": [
+        {
+          "key": "reachable",
+          "type": "boolean",
+          "label": {
+            "en": "Reachable",
+            "fr": "Joignable",
+            "de": "Erreichbar",
+            "es": "Accesible"
+          }
+        },
+        {
+          "key": "services_down",
+          "type": "number",
+          "label": {
+            "en": "Services down",
+            "fr": "Services en panne",
+            "de": "Ausgefallene Dienste",
+            "es": "Servicios caídos"
+          }
+        },
+        {
+          "key": "names",
+          "type": "string",
+          "label": {
+            "en": "Names of the services down",
+            "fr": "Noms des services en panne",
+            "de": "Namen der ausgefallenen Dienste",
+            "es": "Nombres de los servicios caídos"
+          }
+        },
+        {
+          "key": "routers_error",
+          "type": "number",
+          "label": {
+            "en": "Routers in error",
+            "fr": "Routeurs en erreur",
+            "de": "Router mit Fehler",
+            "es": "Routers con error"
+          }
+        },
+        {
+          "key": "routers",
+          "type": "string",
+          "label": {
+            "en": "Names of the routers in error",
+            "fr": "Noms des routeurs en erreur",
+            "de": "Namen der Router mit Fehler",
+            "es": "Nombres de los routers con error"
+          }
+        },
+        {
+          "key": "version",
+          "type": "string",
+          "label": {
+            "en": "Version",
+            "fr": "Version",
+            "de": "Version",
+            "es": "Versión"
+          }
+        },
+        {
+          "key": "sentence",
+          "type": "string",
+          "label": {
+            "en": "Sentence",
+            "fr": "Phrase",
+            "de": "Satz",
+            "es": "Frase"
+          }
         }
       ]
     }
   ],
   "widgets": [
     {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
+      "key": "traefik",
+      "label": {
+        "en": "Traefik",
+        "fr": "Traefik",
+        "de": "Traefik",
+        "es": "Traefik"
       },
-      "icon": "activity",
-      "action_timeout_seconds": 15
+      "description": {
+        "en": "Services down first, then degraded, then the others, and the routers in error.",
+        "fr": "Les services en panne d'abord, puis dégradés, puis les autres, et les routeurs en erreur.",
+        "de": "Erst die ausgefallenen Dienste, dann eingeschränkte, dann die anderen, und Router mit Fehler.",
+        "es": "Primero los servicios caídos, luego los degradados y los demás, y los routers con error."
+      },
+      "icon": "server",
+      "action_timeout_seconds": 20,
+      "settings": [
+        {
+          "key": "services",
+          "type": "multi_select",
+          "label": {
+            "en": "Services (empty: all)",
+            "fr": "Services (vide : tous)",
+            "de": "Dienste (leer: alle)",
+            "es": "Servicios (vacío: todos)"
+          },
+          "source": "devices",
+          "description": {
+            "en": "Empty: every HTTP service. Only the devices added to Gladys can be chosen.",
+            "fr": "Vide : tous les services HTTP. Seuls les appareils ajoutés à Gladys peuvent être choisis.",
+            "de": "Leer: alle HTTP-Dienste. Nur die in Gladys angelegten Geräte sind wählbar.",
+            "es": "Vacío: todos los servicios HTTP. Solo se pueden elegir los dispositivos añadidos a Gladys."
+          },
+          "required": false
+        }
+      ]
     }
   ]
 }
