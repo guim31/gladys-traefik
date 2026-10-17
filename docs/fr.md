@@ -1,67 +1,175 @@
-# Template de démonstration
+# Traefik
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+[Traefik](https://traefik.io/traefik/) est le reverse proxy placé devant
+beaucoup de services auto-hébergés : il envoie `nextcloud.example.com` vers le
+conteneur Nextcloud, renouvelle les certificats, et peut vérifier que chaque
+backend répond encore. Cette intégration amène l'état de Traefik dans Gladys :
+un appareil « Traefik » avec sa version et les routeurs, services et
+middlewares en erreur, et un appareil par service HTTP avec ses serveurs en
+service. Les scènes peuvent réagir quand **n'importe quel** service tombe en
+panne ou revient, quand un routeur passe en erreur, ou quand Traefik lui-même
+ne répond plus ; un widget de tableau de bord liste les services en panne en
+premier.
 
-## Ce que vous obtenez
+Testée sur un vrai Traefik v3.7 (Docker, provider fichier, deux backends
+derrière un health check, routeurs cassés exprès). Traefik v2 a la même API et
+devrait fonctionner, sans test : vos retours sont bienvenus sur
+[les issues](https://github.com/guim31/gladys-traefik/issues).
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+## Ce qu'il vous faut
 
-## Configuration
+- Gladys Assistant 5.1.0 ou plus récent.
+- Traefik v2 ou v3 avec son **API activée**, joignable depuis la machine de
+  Gladys :
+  - soit `api.insecure=true` (configuration statique) : l'API répond sur le
+    point d'entrée `traefik`, port 8080, sans mot de passe. Simple, à réserver
+    au réseau local ;
+  - soit un de vos routeurs vers le service `api@internal`, sur votre domaine,
+    en général derrière un middleware `basicAuth` : saisissez son utilisateur
+    et son mot de passe.
+- Pour savoir qu'un service est **en panne**, un
+  [health check](https://doc.traefik.io/traefik/routing/services/#health-check)
+  sur son load balancer. Sans lui, Traefik déclare tous les serveurs UP :
+  l'intégration voit encore un service en erreur ou disparu (un conteneur Docker
+  arrêté), pas un backend qui ne répond plus.
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+L'intégration envoie deux requêtes légères par intervalle de rafraîchissement
+(une minute par défaut) à l'API de Traefik, rien vers Internet.
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+## Premiers pas
 
-## Actions
+### 1. Activer l'API de Traefik
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+Avec `api.insecure`, ajoutez à la configuration statique (ligne de commande du
+conteneur) :
 
-## Scènes
+```
+--api.insecure=true
+```
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+et rendez le port 8080 joignable depuis Gladys. Par un routeur, la
+[documentation de Traefik](https://doc.traefik.io/traefik/operations/api/)
+montre un routeur vers `api@internal` avec un middleware `basicAuth`.
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+### 2. Configurer l'intégration
+
+Dans Gladys, ouvrez **Intégrations → Traefik → Configuration** :
+
+- **Adresse de l'API** : `http://192.168.1.2:8080` avec `api.insecure`, ou
+  `https://traefik.example.com` par un routeur. Une adresse du tableau de bord
+  copiée depuis le navigateur convient aussi : `/dashboard/…` est retiré.
+- **Utilisateur (basic auth)** et **Mot de passe (basic auth)** : seulement si
+  le routeur de l'API les demande.
+- **Intervalle de rafraîchissement** : de 30 secondes à 5 minutes.
+- **Langue des noms** : langue des noms des fonctionnalités et des résultats
+  de scène.
+
+Enregistrez, puis **Tester la connexion** : le résultat donne la version de
+Traefik, le nombre de services HTTP, et ceux en panne.
+
+### 3. Ajouter les appareils
+
+Ouvrez l'onglet **Découverte** : l'appareil « Traefik » et un appareil par
+service HTTP (`nextcloud@docker`, `app@file`…) y sont listés. Ajoutez ceux à
+suivre. Les services internes de Traefik (`api@internal`…) sont écartés.
+
+## Les appareils
+
+L'appareil **Traefik** :
+
+| Fonctionnalité        | Valeur                                                             |
+| --------------------- | ------------------------------------------------------------------ |
+| Joignable             | oui quand l'API répond, non après deux lectures en échec           |
+| Version               | ex. `3.7.15`                                                       |
+| Routeurs en erreur    | routeurs HTTP, TCP et UDP que Traefik n'a pas pu construire        |
+| Services en erreur    | services en erreur                                                 |
+| Middlewares en erreur | middlewares en erreur                                              |
+| Avertissements        | routeurs, services et middlewares en avertissement                 |
+| Services en panne     | services HTTP sans aucun serveur en service (ou disparus, ajoutés) |
+
+Chaque **service HTTP** :
+
+| Fonctionnalité      | Valeur                                         |
+| ------------------- | ---------------------------------------------- |
+| En bonne santé      | oui tant qu'au moins un serveur est en service |
+| Serveurs en service | serveurs UP selon le health check              |
+| Serveurs au total   | serveurs déclarés dans le load balancer        |
+
+Un service qui disparaît de Traefik (son conteneur Docker arrêté) compte comme
+en panne : aucun serveur, pas en bonne santé, jusqu'à son retour.
 
 ## Tableau de bord
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+Ajoutez le widget **Traefik** à un tableau de bord : les services en panne, les
+routeurs en erreur et les services en service, puis une ligne par service — en
+panne d'abord, puis dégradés (une partie des serveurs en panne), puis les
+autres — avec ses serveurs en service, et les routeurs en erreur avec leur
+message. Ses réglages peuvent le limiter à certains services (appareils ajoutés
+à Gladys). **Actualiser** relit Traefik aussitôt.
+
+## Scènes
+
+### Déclencheurs
+
+- **Un service tombe en panne** : un service HTTP n'a plus aucun serveur en
+  service, ou a disparu de Traefik. Limitable à certains services. Variables :
+  nom du service, fournisseur, serveurs en service et au total, disparu de
+  Traefik.
+- **Un service est rétabli** : un service en panne a de nouveau un serveur en
+  service. Variables : les mêmes, et la durée de la panne en minutes.
+- **Un routeur passe en erreur** : un routeur passe en erreur (service ou
+  middleware manquant, règle invalide…), une fois par routeur jusqu'à sa
+  correction. Variables : nom du routeur, fournisseur, protocole, message
+  d'erreur.
+- **Traefik est injoignable** : l'API ne répond plus, deux lectures de suite
+  (un redémarrage rapide de Traefik ne le déclenche pas). Variable : la raison.
+
+Tous les services déclenchent, ajoutés à Gladys ou non. Les routeurs déjà en
+erreur au démarrage de l'intégration ne sont pas annoncés.
+
+### Actions
+
+- **État d'un service** : en bonne santé ou non, son état en toutes lettres
+  (OK, Dégradé, En panne, Absent), serveurs en service et au total, et une
+  phrase toute prête comme « app@docker : Dégradé, 1/2 serveur(s) en
+  service. »
+- **État de Traefik** : joignable ou non, le nombre et les noms des services en
+  panne et des routeurs en erreur, la version, et une phrase. Quand Traefik ne
+  répond pas, l'action n'échoue pas : elle le dit, et la scène continue.
+
+### Idées de scènes
+
+- Quand **Un service tombe en panne**, envoyer un message Telegram
+  « {{service}} est en panne ({{servers_up}}/{{servers_total}} serveurs) », et
+  un autre sur **Un service est rétabli** avec la durée de la panne.
+- Chaque matin à 8 h, **État de Traefik** et, si un service est en panne, lire
+  sa phrase sur l'enceinte.
+- Quand **Traefik est injoignable**, passer une lampe en rouge : tous les sites
+  de la maison sont tombés d'un coup.
 
 ## Dépannage
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+- **« Traefik ne répond pas »** : vérifiez l'adresse et le port depuis la
+  machine de Gladys (`curl http://192.168.1.2:8080/api/version`), et que le
+  port 8080 est publié par le conteneur Traefik.
+- **« pas d'API Traefik à cette adresse »** : l'API n'est pas activée, ou
+  l'adresse pointe vers un autre routeur que celui d'`api@internal`.
+- **« utilisateur ou mot de passe refusé »** : vérifiez l'utilisateur de la
+  basic auth ; un mot de passe terminé par une espace est gardé tel quel.
+- **« l'adresse redirige »** : saisissez directement l'adresse en `https://`.
+- **« certificat refusé »** : utilisez un certificat reconnu par Gladys (Let's
+  Encrypt), ou l'adresse `http://` d'`api.insecure` sur le réseau local.
+- **Un service ne tombe jamais en panne** : ajoutez un health check à son load
+  balancer.
+- Plus de détails dans les logs de l'intégration (Intégrations → Traefik →
+  Logs), avec `LOG_LEVEL=debug` pour chaque lecture.
+
+## Limites
+
+- Lecture seule : l'API de Traefik ne permet pas de modifier la configuration,
+  l'intégration n'a donc aucune commande.
+- Seuls les services HTTP deviennent des appareils ; les routeurs et services
+  TCP et UDP sont comptés sur l'appareil Traefik.
+- Sans health check, Traefik déclare tous les serveurs UP.
+- Les métriques Prometheus (requêtes, erreurs 5xx) ne sont pas lues.
+- Un seul Traefik par intégration.

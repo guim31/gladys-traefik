@@ -1,61 +1,167 @@
-# Demo Devices Template
+# Traefik
 
-This is the user documentation of the integration. Gladys re-hosts this file
-and shows a permanent **Documentation** link to it in the Configuration screen
-(in the user's language, with English as the fallback) — it is when
-configuring that the user needs it most. Keep the short onboarding hints in
-the `section` blocks of the manifest `config_schema`; put the long
-step-by-step (screenshots, troubleshooting…) here.
+[Traefik](https://traefik.io/traefik/) is the reverse proxy in front of many
+self-hosted services: it routes `nextcloud.example.com` to the Nextcloud
+container, renews the certificates, and can check that each backend still
+answers. This integration brings the state of Traefik into Gladys: a "Traefik"
+device with its version and the routers, services and middlewares in error,
+and one device per HTTP service with its servers up. Scenes can react when
+**any** service goes down or comes back, when a router turns to error, or when
+Traefik itself no longer answers; a dashboard widget lists the services down
+first.
 
-## What you get
+Tested against a real Traefik v3.7 (Docker, file provider, two backends behind
+a health check, broken routers on purpose). Traefik v2 has the same API and
+should work, untested: feedback welcome on
+[the issues](https://github.com/guim31/gladys-traefik/issues).
 
-Six demo devices show up after installation: a weather station (real data
-from Open-Meteo), a switch, a dimmable light, a smart plug with power
-metering, a motion sensor and a camera.
+## What you need
 
-## Configuration
+- Gladys Assistant 5.1.0 or later.
+- Traefik v2 or v3 with its **API enabled**, reachable from the Gladys machine:
+  - either `api.insecure=true` (static configuration): the API answers on the
+    `traefik` entry point, port 8080, without password. Simple, for a local
+    network only;
+  - or a router of yours to the `api@internal` service, on your domain,
+    usually behind a `basicAuth` middleware: enter its user and password.
+- To know whether a service is **down**, a
+  [health check](https://doc.traefik.io/traefik/routing/services/#health-check)
+  on its load balancer. Without one, Traefik reports every server UP: the
+  integration still sees a service in error or gone (a Docker container
+  stopped), not a backend that stopped answering.
 
-1. Open the **Configuration** tab of the integration.
-2. Set the **latitude** and **longitude** the demo weather station should
-   observe (they default to Paris), and pick your temperature unit.
-   The **refresh interval** sets how often the weather station and the
-   plug's power are read: every 5 minutes by default, every minute at most.
-3. Save: the devices appear in the **Discovery** tab, ready to be added.
+The integration sends two light requests per refresh interval (one minute by
+default) to the API of Traefik, nothing to the internet.
 
-The **Prefer the local connection** toggle drives the demo plug: it reports
-the channel it actually uses as a badge (local or cloud), with an orange dot
-when it runs degraded (local refused, cloud fallback).
+## Getting started
 
-## Actions
+### 1. Enable the API of Traefik
 
-- **Test the weather provider** — performs a live request to Open-Meteo and
-  shows the current temperature and humidity under the button.
-- **Identify a device** — pick one of your devices in the list and it will
-  signal itself (the demo light "blinks" in the logs).
+With `api.insecure`, add to the static configuration (command line of the
+container):
 
-## Scenes
+```
+--api.insecure=true
+```
 
-The integration adds its own cards to the scene editor (Gladys 5.1 or
-later), under the **Integrations** category:
+and make port 8080 reachable from Gladys. Through a router, the
+[Traefik documentation](https://doc.traefik.io/traefik/operations/api/) shows
+a router to `api@internal` with a `basicAuth` middleware.
 
-- **Motion detected** (trigger) — starts the scene when a demo motion sensor
-  sees something move. Optionally pick the sensor and what moved (person,
-  animal); left empty, any detection matches. The following actions can
-  read what moved with `{{triggerEvent.data.target}}`.
-- **Identify a device** (action) — makes the chosen device signal itself.
-  It returns whether the device could signal itself, so the following
-  actions can depend on it.
+### 2. Configure the integration
+
+In Gladys, open **Integrations → Traefik → Configuration**:
+
+- **API address**: `http://192.168.1.2:8080` with `api.insecure`, or
+  `https://traefik.example.com` through a router. A dashboard address copied
+  from the browser works too: `/dashboard/…` is removed.
+- **User (basic auth)** and **Password (basic auth)**: only when the router of
+  the API asks for them.
+- **Refresh interval**: 30 seconds to 5 minutes.
+- **Language of the names**: language of the feature names and of the scene
+  results.
+
+Save, then **Test the connection**: the result shows the version of Traefik,
+the number of HTTP services, and the ones down.
+
+### 3. Add the devices
+
+Open the **Discover** tab: the "Traefik" device and one device per HTTP
+service (`nextcloud@docker`, `app@file`…) are listed. Add the ones you want to
+follow. The internal services of Traefik (`api@internal`…) are left out.
+
+## The devices
+
+The **Traefik** device:
+
+| Feature              | Value                                                     |
+| -------------------- | --------------------------------------------------------- |
+| Reachable            | yes when the API answers, no after two failed reads       |
+| Version              | e.g. `3.7.15`                                             |
+| Routers in error     | HTTP, TCP and UDP routers Traefik could not build         |
+| Services in error    | services in error                                         |
+| Middlewares in error | middlewares in error                                      |
+| Warnings             | routers, services and middlewares with a warning          |
+| Services down        | HTTP services without any server up (or gone, once added) |
+
+Each **HTTP service**:
+
+| Feature          | Value                                    |
+| ---------------- | ---------------------------------------- |
+| Healthy          | yes as long as at least one server is up |
+| Servers up       | servers UP according to the health check |
+| Servers in total | servers declared in the load balancer    |
+
+A service that disappears from Traefik (its Docker container stopped) counts
+as down: no server, not healthy, until it comes back.
 
 ## Dashboard
 
-Add the **Demo status** widget to a dashboard: it shows the live
-temperature of the weather station and the power of the office plug, the
-connection the plug currently uses (orange when degraded) and the observed
-location. Its **Identify the light** button makes the demo light signal
-itself.
+Add the **Traefik** widget to a dashboard: the services down, the routers in
+error and the services working, then one row per service — down first, then
+degraded (some servers down), then the others — with its servers up, and the
+routers in error with their message. Its settings can limit it to some
+services (devices added to Gladys). **Refresh** reads Traefik at once.
+
+## Scenes
+
+### Triggers
+
+- **A service goes down**: an HTTP service no longer has any server up, or is
+  gone from Traefik. Optionally limited to some services. Variables: service
+  name, provider, servers up and in total, gone from Traefik.
+- **A service is back up**: a service that was down has a server up again.
+  Variables: the same, and the length of the outage in minutes.
+- **A router is in error**: a router turns to error (missing service or
+  middleware, bad rule…), once per router until it is fixed. Variables: router
+  name, provider, protocol, error message.
+- **Traefik is unreachable**: the API no longer answers, two reads in a row (a
+  quick restart of Traefik does not fire it). Variable: the reason.
+
+Every service fires the triggers, added to Gladys or not. The routers already
+in error when the integration starts are not announced.
+
+### Actions
+
+- **State of a service**: healthy or not, its state in words (OK, Degraded,
+  Down, Missing), servers up and in total, and a ready-made sentence such as
+  "app@docker: Degraded, 1/2 server(s) up."
+- **State of Traefik**: reachable or not, the number and names of the services
+  down and of the routers in error, the version, and a sentence. When Traefik
+  does not answer, the action does not fail: it says so, and the scene goes on.
+
+### Scene ideas
+
+- When **A service goes down**, send a Telegram message "{{service}} is down
+  ({{servers_up}}/{{servers_total}} servers)", and another one on **A service
+  is back up** with the length of the outage.
+- Every morning at 8:00, **State of Traefik** and, if a service is down, read
+  its sentence on the speaker.
+- When **Traefik is unreachable**, switch a light red: every site of the house
+  is down at once.
 
 ## Troubleshooting
 
-The integration logs everything it does: check the integration logs from the
-Gladys UI (or `docker logs` on the host) with `LOG_LEVEL=debug` for the full
-detail.
+- **"Traefik does not answer"**: check the address and the port from the Gladys
+  machine (`curl http://192.168.1.2:8080/api/version`), and that port 8080 is
+  published by the Traefik container.
+- **"no Traefik API at this address"**: the API is not enabled, or the address
+  points to a router that is not the one to `api@internal`.
+- **"user or password refused"**: check the basic auth user; a password with a
+  trailing space is kept as typed.
+- **"the address redirects"**: enter the `https://` address directly.
+- **"certificate refused"**: use a certificate Gladys trusts (Let's Encrypt),
+  or the `http://` address of `api.insecure` on the local network.
+- **A service never goes down**: add a health check to its load balancer.
+- More details in the logs of the integration (Integrations → Traefik → Logs),
+  with `LOG_LEVEL=debug` for every read.
+
+## Limits
+
+- Read-only: the Traefik API cannot change the configuration, so the
+  integration has no command.
+- HTTP services only as devices; TCP and UDP routers and services are counted
+  on the Traefik device.
+- Without a health check, Traefik reports every server UP.
+- The Prometheus metrics (requests, 5xx errors) are not read.
+- One Traefik per integration.

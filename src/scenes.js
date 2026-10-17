@@ -1,41 +1,93 @@
 // -----------------------------------------------------------------------------
-// Scene actions (SDK v0.14+, Gladys 5.1+).
+// Scene action handlers (manifest `scene_actions`, Gladys 5.1+).
 //
-// A scene action is an OPERATION a scene author places in a scene, with
-// parameters and a result: "identify this device", "take a snapshot", "clean
-// these rooms". Each one is declared in the manifest `scene_actions` field
-// (key, label, `fields` in the config_schema grammar, scalar `outputs`) and
-// handled here, keyed by that same `key`; index.js registers every entry with
-// `gladys.onSceneAction(key, ...)`.
-//
-// Scene TRIGGERS are the other direction ("this happened"): they are fired by
-// the device that observes the event, see src/devices/motionSensor.js.
-//
-// The rules that matter:
-//   - `fields` arrive RESOLVED: scene variables substituted, defaults applied,
-//     validated by the core; a `"source": "devices"` field is the chosen
-//     device external_id;
-//   - resolve an object of the declared `outputs` (scalars only), readable by
-//     the following actions of the scene, or `undefined` for none. Keys not
-//     declared in the manifest are dropped by the core;
-//   - throwing fails THIS action only: the scene logs it and continues. A
-//     scene action is never a condition: return an output and let the scene
-//     author gate on it;
-//   - never fire a scene event as a consequence of a received action: a scene
-//     bound to that event would loop through the integration.
+// "Is this service healthy?" is already a scene condition on the device
+// feature. The actions are about what a condition cannot do: put the state in
+// a message ("app@docker: degraded, 1/2 server(s) up"), and sum up the whole
+// proxy — services down and routers in error, added to Gladys or not, or
+// that Traefik does not answer. Both read Traefik again when the last read is
+// older than 15 seconds. The Traefik API is read-only: nothing to command.
 // -----------------------------------------------------------------------------
 
-import { createLogger } from '@gladysassistant/integration-sdk';
-import { signalDevice } from './devices/index.js';
+import { isHealthy, stateOf } from './devices.js';
+import { ACTION_TEXT, REPORT_TEXT, SENTENCE_TEXT, STATE_TEXT, labelled, pick } from './texts.js';
 
-const logger = createLogger({ name: 'scenes' });
+// Names listed in the `names` output, at most (the rest is counted).
+export const MAX_LISTED_NAMES = 20;
+
+const listed = (names) => {
+  const shown = names.slice(0, MAX_LISTED_NAMES);
+  return names.length > shown.length
+    ? `${shown.join(', ')}, +${names.length - shown.length}`
+    : shown.join(', ');
+};
 
 export const SCENE_ACTIONS = {
-  // The ack is awaited under the action's `timeout_seconds` (15 s in the
-  // manifest), counted from the moment the scene reaches the action.
-  async identify_device(gladys, { fields, config }) {
-    logger.info(`Scene action identify_device <- ${fields.device}`);
-    const signalled = await signalDevice(gladys, fields.device, config);
-    return { signalled };
+  async get_service_status(hub, { fields = {} }) {
+    hub.assertReadable();
+    await hub.refreshIfStale();
+    hub.assertReadable();
+    const language = hub.config.language;
+    const service = hub.find(fields.device);
+    if (!service) {
+      throw new Error(pick(ACTION_TEXT.unknownService, language));
+    }
+    const state = pick(STATE_TEXT[stateOf(service)], language);
+    const words = SENTENCE_TEXT[language] ?? SENTENCE_TEXT.en;
+    return {
+      healthy: isHealthy(service),
+      state,
+      servers_up: service.serversUp,
+      servers_total: service.serversTotal,
+      sentence: `${labelled(service.name, state, language)}, ${words.servers(
+        service.serversUp,
+        service.serversTotal,
+      )}.`,
+    };
+  },
+
+  async get_proxy_status(hub) {
+    if (!hub.client) {
+      hub.assertReadable(); // no address: the configuration to fix
+    }
+    await hub.refreshIfStale();
+    const language = hub.config.language;
+    const text = REPORT_TEXT[language] ?? REPORT_TEXT.en;
+    if (hub.error || !hub.reachable) {
+      // "Traefik does not answer" is an answer: the scene goes on with it.
+      return {
+        reachable: false,
+        services_down: 0,
+        names: '',
+        routers_error: 0,
+        routers: '',
+        version: hub.version,
+        sentence: `${labelled('Traefik', text.unreachable, language)}.`,
+      };
+    }
+    const down = [...hub.services.values()]
+      .filter((service) => !isHealthy(service))
+      .map((service) => service.name)
+      .sort((a, b) => a.localeCompare(b));
+    const routers = hub
+      .routersInError()
+      .map((router) => router.name)
+      .sort((a, b) => a.localeCompare(b));
+    const parts = [];
+    if (down.length > 0) {
+      parts.push(`${text.down(down.length)} (${listed(down)})`);
+    }
+    if (routers.length > 0) {
+      parts.push(`${text.routers(routers.length)} (${listed(routers)})`);
+    }
+    return {
+      reachable: true,
+      services_down: down.length,
+      names: listed(down),
+      routers_error: routers.length,
+      routers: listed(routers),
+      version: hub.version,
+      sentence: `${labelled('Traefik', parts.length > 0 ? parts.join(', ') : text.healthy, language)}.`,
+    };
   },
 };

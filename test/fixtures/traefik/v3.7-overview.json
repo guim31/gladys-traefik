@@ -1,0 +1,59 @@
+{
+  "http": {
+    "routers": {
+      "total": 7,
+      "warnings": 0,
+      "errors": 2
+    },
+    "services": {
+      "total": 5,
+      "warnings": 0,
+      "errors": 0
+    },
+    "middlewares": {
+      "total": 4,
+      "warnings": 0,
+      "errors": 0
+    }
+  },
+  "tcp": {
+    "routers": {
+      "total": 1,
+      "warnings": 0,
+      "errors": 0
+    },
+    "services": {
+      "total": 1,
+      "warnings": 0,
+      "errors": 0
+    },
+    "middlewares": {
+      "total": 0,
+      "warnings": 0,
+      "errors": 0
+    }
+  },
+  "udp": {
+    "routers": {
+      "total": 0,
+      "warnings": 0,
+      "errors": 0
+    },
+    "services": {
+      "total": 0,
+      "warnings": 0,
+      "errors": 0
+    }
+  },
+  "certificates": {
+    "total": 0,
+    "warnings": 0,
+    "errors": 0
+  },
+  "features": {
+    "tracing": "",
+    "metrics": "",
+    "accessLog": false
+  },
+  "providers": ["File"]
+}
