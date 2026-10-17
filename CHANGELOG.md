@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-17
+
 ### Added
 
 - A Traefik device: reachable, version, routers, services and middlewares in
@@ -26,4 +28,5 @@ the notes of the version's GitHub Release.
   action.
 - Texts and documentation in English, French, German and Spanish.
 
-[Unreleased]: https://github.com/guim31/gladys-traefik/commits/main
+[Unreleased]: https://github.com/guim31/gladys-traefik/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/guim31/gladys-traefik/releases/tag/v1.0.0
