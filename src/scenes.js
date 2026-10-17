@@ -24,7 +24,9 @@ const listed = (names) => {
 
 export const SCENE_ACTIONS = {
   async get_service_status(hub, { fields = {} }) {
-    hub.assertReadable();
+    if (!hub.client) {
+      hub.assertReadable(); // no address: the configuration to fix
+    }
     await hub.refreshIfStale();
     hub.assertReadable();
     const language = hub.config.language;

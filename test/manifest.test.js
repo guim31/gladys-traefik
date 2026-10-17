@@ -117,6 +117,7 @@ test('the scene triggers are the ones the hub fires, with their filters and vari
   await world.hub.pollNow();
   world.traefik.setRouterError('single@file', 'the service "single@file" does not exist');
   await world.hub.pollNow();
+  await world.hub.pollNow();
   world.traefik.failure = 'down';
   await world.hub.pollNow();
   await world.hub.pollNow();

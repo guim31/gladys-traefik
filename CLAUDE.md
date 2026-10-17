@@ -267,6 +267,11 @@ derrière une basic auth (`{SHA}`) :
 - `rawdata` contient la configuration des middlewares (hachés de basic auth compris) : n'en rien
   journaliser ni publier.
 - Le déclencheur « Traefik est injoignable » attend **deux lectures en échec de suite** : un
-  redémarrage de Traefik (quelques secondes) ne doit pas réveiller les scènes.
+  redémarrage de Traefik (quelques secondes) ne doit pas réveiller les scènes. De même, un service
+  ne compte comme disparu, et un routeur nouvellement en erreur n'est annoncé, qu'à la **deuxième
+  lecture** de suite : juste après son redémarrage, Traefik répond avant que ses providers (Docker…)
+  aient envoyé leur configuration (relecture indépendante, non rejoué ici).
+- `applySuccess` met à jour l'état sans `await` puis tire les événements : une configuration
+  changée pendant une lecture ne doit pas mêler l'ancien Traefik au nouveau.
 - Changer d'adresse d'API repart de zéro (l'adresse est stockée dans `/data`) : pas de « service en
   panne » pour les services de l'ancien Traefik.

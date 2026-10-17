@@ -111,7 +111,7 @@ Gladys). **Actualizar** vuelve a leer Traefik al momento.
 ### Disparadores
 
 - **Un servicio cae**: un servicio HTTP ya no tiene ningún servidor activo, o
-  ha desaparecido de Traefik. Se puede limitar a algunos servicios. Variables:
+  ha desaparecido de Traefik (dos lecturas seguidas). Se puede limitar a algunos servicios. Variables:
   nombre del servicio, proveedor, servidores activos y en total, desaparecido
   de Traefik.
 - **Un servicio se restablece**: un servicio caído vuelve a tener un servidor

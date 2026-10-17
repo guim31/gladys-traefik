@@ -58,6 +58,10 @@ export const HUB_TIMINGS = {
 // Traefik (a few seconds) does not fire the scenes.
 export const FAILURES_BEFORE_UNREACHABLE = 2;
 
+// Reads without a service before it counts as gone, and with a router newly
+// in error before it is announced.
+export const ABSENT_READS_BEFORE_MISSING = 2;
+
 const MAX_TRANSPORTS_PER_REQUEST = 100;
 const MAX_EVENT_TEXT = 1000;
 
@@ -94,6 +98,12 @@ export class TraefikHub {
     this.error = null;
     this.failures = 0;
     this.polling = null;
+    /** Reads in a row without a remembered service, by name. */
+    this.absent = new Map();
+    /** Routers seen once newly in error, announced at the next read. */
+    this.pendingRouters = new Set();
+    /** Set when the address changed: the Discovery list of the old Traefik goes. */
+    this.clearDiscovery = false;
     this.transports = new Map();
     this.connection = null;
     this.discovered = null;
@@ -112,8 +122,15 @@ export class TraefikHub {
     this.saved = {
       initialized: saved.initialized === true,
       reachable: typeof saved.reachable === 'boolean' ? saved.reachable : null,
-      services: object(saved.services),
-      routers: object(saved.routers),
+      // A hand-edited or damaged file must not block the reads.
+      services: Object.fromEntries(
+        Object.entries(object(saved.services)).filter(
+          ([, entry]) => entry && typeof entry === 'object',
+        ),
+      ),
+      routers: Object.fromEntries(
+        Object.entries(object(saved.routers)).filter(([, since]) => typeof since === 'number'),
+      ),
       url: typeof saved.url === 'string' ? saved.url : null,
     };
     await this.reconfigure(config);
@@ -150,8 +167,11 @@ export class TraefikHub {
       this.error = null;
       this.failures = 0;
       this.polling = null;
+      this.absent = new Map();
+      this.pendingRouters = new Set();
       // Another Traefik: what was saved about the previous one means nothing.
       if (config.url && this.saved.url !== config.url) {
+        this.clearDiscovery = this.saved.url !== null;
         this.saved = {
           initialized: false,
           reachable: null,
@@ -251,9 +271,13 @@ export class TraefikHub {
   }
 
   async applySuccess({ version, services, routers, counts }) {
+    // Everything below up to the scene events is synchronous: a configuration
+    // change cannot slip between the reading and the saved state it updates.
+    const saved = this.saved;
+    const client = this.client;
     const now = this.now();
     let widgetChanged = this.error !== null || this.readAt === 0;
-    if (this.error || this.saved.reachable === false) {
+    if (this.error || saved.reachable === false) {
       logger.info('Traefik answers again');
     }
     if (this.readAt === 0 || version !== this.version) {
@@ -261,33 +285,47 @@ export class TraefikHub {
         `Traefik ${version} (${hostOf(this.config.url)}): ${services.length} HTTP service(s), ${counts.routers.total} router(s)`,
       );
     }
-    let dirty = this.saved.reachable !== true || !this.saved.initialized;
-    const initialized = this.saved.initialized;
+    let dirty = saved.reachable !== true || !saved.initialized;
+    const initialized = saved.initialized;
     this.error = null;
     this.failures = 0;
-    this.saved.reachable = true;
-    this.saved.initialized = true;
+    saved.reachable = true;
+    saved.initialized = true;
     this.version = version;
     this.counts = counts;
     this.readAt = now;
+    const events = [];
 
     // Services: the ones Traefik lists, and the ones it no longer lists whose
-    // health is still remembered.
+    // health is still remembered. A service counts as gone after
+    // ABSENT_READS_BEFORE_MISSING reads without it: a Traefik that just
+    // restarted answers before its providers (Docker…) sent their services.
     const next = new Map();
     for (const service of services) {
       if (!next.has(service.name)) {
         next.set(service.name, { ...service, present: true });
+        this.absent.delete(service.name);
       }
     }
-    const names = new Set([...next.keys(), ...Object.keys(this.saved.services)]);
+    const names = new Set([...next.keys(), ...Object.keys(saved.services)]);
     for (const name of names) {
       let view = next.get(name);
       if (!view) {
-        const remembered = this.saved.services[name];
+        const absent = (this.absent.get(name) ?? 0) + 1;
+        this.absent.set(name, absent);
+        const shown = this.services.get(name);
+        if (absent < ABSENT_READS_BEFORE_MISSING) {
+          if (shown) {
+            next.set(name, shown); // not gone yet: keep what was shown
+          }
+          continue;
+        }
+        const remembered = saved.services[name];
         const created = this.isCreated(serviceIds(this.gladys, name).device);
         const since = remembered.missingSince ?? now;
         if (!created && now - since >= this.timings.forgetMissingMs) {
-          delete this.saved.services[name];
+          delete saved.services[name];
+          this.absent.delete(name);
           dirty = true;
           continue;
         }
@@ -313,14 +351,15 @@ export class TraefikHub {
       if (next.has(name) && (!previous || stateOf(previous) !== stateOf(view))) {
         widgetChanged = true;
       }
-      dirty = (await this.transition(view, initialized)) || dirty;
+      dirty = this.transition(saved, view, initialized, events) || dirty;
     }
     if ([...this.services.keys()].some((name) => !next.has(name))) {
       widgetChanged = true; // a service gone
     }
     this.services = next;
 
-    // Routers in error: announced once when they enter the error state.
+    // Routers in error: announced once when they enter the error state, after
+    // two reads in a row (same reason as the services).
     const inError = routers.filter((router) => router.status === 'disabled');
     const before = JSON.stringify(this.routers.filter((router) => router.status === 'disabled'));
     if (JSON.stringify(inError) !== before) {
@@ -328,35 +367,56 @@ export class TraefikHub {
     }
     this.routers = routers;
     const errorNames = new Set(inError.map((router) => router.name));
-    for (const name of Object.keys(this.saved.routers)) {
+    for (const name of Object.keys(saved.routers)) {
       if (!errorNames.has(name)) {
-        delete this.saved.routers[name];
+        delete saved.routers[name];
         dirty = true;
       }
     }
+    for (const name of this.pendingRouters) {
+      if (!errorNames.has(name)) {
+        this.pendingRouters.delete(name);
+      }
+    }
     for (const router of inError) {
-      if (this.saved.routers[router.name] !== undefined) {
+      if (saved.routers[router.name] !== undefined) {
         continue;
       }
-      this.saved.routers[router.name] = now;
-      dirty = true;
       // Nothing announced on the very first read: these errors are not new.
+      if (initialized && !this.pendingRouters.has(router.name)) {
+        this.pendingRouters.add(router.name);
+        continue;
+      }
+      this.pendingRouters.delete(router.name);
+      saved.routers[router.name] = now;
+      dirty = true;
       if (initialized) {
         logger.info(`Router ${router.name} in error: ${router.errors[0] ?? 'no detail'}`);
-        await this.fire(TRIGGERS.ROUTER_ERROR, {
-          router: router.name,
-          provider: router.provider,
-          protocol: router.protocol,
-          error: (router.errors.join(' · ') || '-').slice(0, MAX_EVENT_TEXT),
-        });
+        events.push([
+          TRIGGERS.ROUTER_ERROR,
+          {
+            router: router.name,
+            provider: router.provider,
+            protocol: router.protocol,
+            error: (router.errors.join(' · ') || '-').slice(0, MAX_EVENT_TEXT),
+          },
+        ]);
       }
     }
 
     // Written only when something changed: no wear of the SD card at every read.
     if (dirty) {
-      this.store.save(this.saved);
+      this.store.save(saved);
     }
-    await this.publishStates();
+    for (const [key, data] of events) {
+      if (client !== this.client) {
+        return false; // reconfigured meanwhile: the old Traefik's news are stale
+      }
+      await this.fire(key, data);
+    }
+    if (client === this.client) {
+      await this.publishStates();
+    }
     return widgetChanged;
   }
 
@@ -378,17 +438,19 @@ export class TraefikHub {
           error: pick(ERROR_TEXT[err.kind], this.config.language),
         });
       }
-      await this.publishStates();
     }
+    // Every failed read: "reachable" 0 once unreachable, and its heartbeat
+    // during a long outage (the SDK skips the repeats).
+    await this.publishStates();
     return wasError !== err.kind;
   }
 
   /**
-   * Compare a service with its last health; fire the scene events.
+   * Compare a service with its last health; queue the scene events.
    * @returns {boolean} whether the saved state changed
    */
-  async transition(service, initialized) {
-    const previous = this.saved.services[service.name];
+  transition(saved, service, initialized, events) {
+    const previous = saved.services[service.name];
     const healthy = isHealthy(service);
     const now = this.now();
     let dirty = false;
@@ -397,20 +459,17 @@ export class TraefikHub {
       dirty = true;
     }
     if (previous?.provider !== service.provider && service.provider) {
-      this.saved.services[service.name] = { ...previous, provider: service.provider };
+      saved.services[service.name] = { ...previous, provider: service.provider };
       dirty = true;
     }
     if (previous?.healthy === healthy) {
       return dirty;
     }
-    this.saved.services[service.name] = {
-      ...this.saved.services[service.name],
-      healthy,
-      since: now,
-    };
-    // A service seen for the first time is announced only when it appears
-    // already down after the first read (a new container that fails).
-    if (!previous && (healthy || !initialized)) {
+    saved.services[service.name] = { ...saved.services[service.name], healthy, since: now };
+    // Nothing announced on the very first read; after it, a service seen for
+    // the first time is announced only when it appears already down (a new
+    // container that fails).
+    if (!initialized || (!previous && healthy)) {
       return true;
     }
     const data = {
@@ -422,11 +481,11 @@ export class TraefikHub {
     };
     if (!healthy) {
       logger.info(`Service ${service.name} is ${service.present ? 'down' : 'gone'}`);
-      await this.fire(TRIGGERS.SERVICE_DOWN, { ...data, missing: !service.present });
+      events.push([TRIGGERS.SERVICE_DOWN, { ...data, missing: !service.present }]);
     } else {
       const minutes = Math.max(0, Math.round((now - (previous.since ?? now)) / 60_000));
       logger.info(`Service ${service.name} is up again after ${minutes} min`);
-      await this.fire(TRIGGERS.SERVICE_UP, { ...data, downtime_minutes: minutes });
+      events.push([TRIGGERS.SERVICE_UP, { ...data, downtime_minutes: minutes }]);
     }
     return true;
   }
@@ -460,7 +519,7 @@ export class TraefikHub {
 
   /** Publish the Discovery list when it changed (a service added, a language…). */
   async publishDevices({ force = false } = {}) {
-    const devices = this.discoveredDevices() ?? (this.client ? null : []);
+    const devices = this.discoveredDevices() ?? (!this.client || this.clearDiscovery ? [] : null);
     if (devices === null) {
       return;
     }
@@ -471,6 +530,7 @@ export class TraefikHub {
     try {
       await this.gladys.publishDiscoveredDevices(devices);
       this.discovered = key;
+      this.clearDiscovery = false;
       this.problems.recover('discovered', 'Discovered devices accepted again');
     } catch (err) {
       this.problems.fail('discovered', `Discovered devices refused: ${err.message}`);
@@ -504,11 +564,11 @@ export class TraefikHub {
    * has (and sends an unchanged one again after `heartbeatMs`).
    */
   async publishStates() {
-    if (this.readAt === 0 || this.counts === null) {
+    if (this.readAt === 0) {
       return; // never read: nothing to tell
     }
     const states = [];
-    if (this.reachable) {
+    if (this.reachable && this.counts) {
       for (const service of this.services.values()) {
         if (this.isCreated(serviceIds(this.gladys, service.name).device)) {
           states.push(...serviceValues(this.gladys, service));
@@ -547,7 +607,7 @@ export class TraefikHub {
 
   /** The badge of the added devices: local, or unreachable. */
   async publishTransports() {
-    if (!this.client || this.readAt === 0 || this.counts === null) {
+    if (!this.client || this.readAt === 0) {
       return;
     }
     const transport = this.reachable ? DEVICE_TRANSPORTS.LOCAL : DEVICE_TRANSPORTS.UNREACHABLE;

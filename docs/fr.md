@@ -112,7 +112,7 @@ message. Ses réglages peuvent le limiter à certains services (appareils ajout�
 ### Déclencheurs
 
 - **Un service tombe en panne** : un service HTTP n'a plus aucun serveur en
-  service, ou a disparu de Traefik. Limitable à certains services. Variables :
+  service, ou a disparu de Traefik (deux lectures de suite). Limitable à certains services. Variables :
   nom du service, fournisseur, serveurs en service et au total, disparu de
   Traefik.
 - **Un service est rétabli** : un service en panne a de nouveau un serveur en

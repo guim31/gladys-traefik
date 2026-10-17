@@ -69,7 +69,18 @@ export async function httpRequest(url, { headers = {}, timeoutMs = 10_000 } = {}
     await response.body?.cancel();
     throw new Error('Response too large');
   }
-  return { status: response.status, body: await response.text() };
+  // A chunked answer has no length: count while reading.
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body ?? []) {
+    size += chunk.length;
+    if (size > MAX_BODY_BYTES) {
+      await response.body.cancel().catch(() => {});
+      throw new Error('Response too large');
+    }
+    chunks.push(chunk);
+  }
+  return { status: response.status, body: Buffer.concat(chunks).toString('utf8') };
 }
 
 const STATUSES = new Set(['enabled', 'warning', 'disabled']);

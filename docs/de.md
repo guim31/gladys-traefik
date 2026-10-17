@@ -110,7 +110,7 @@ Traefik sofort neu.
 ### Auslöser
 
 - **Ein Dienst fällt aus**: Ein HTTP-Dienst hat keinen erreichbaren Server mehr
-  oder ist aus Traefik verschwunden. Auf einige Dienste begrenzbar. Variablen:
+  oder ist aus Traefik verschwunden (zwei Abfragen in Folge). Auf einige Dienste begrenzbar. Variablen:
   Name des Dienstes, Provider, erreichbare Server und Server insgesamt, aus
   Traefik verschwunden.
 - **Ein Dienst läuft wieder**: Ein ausgefallener Dienst hat wieder einen

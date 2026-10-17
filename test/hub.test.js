@@ -101,6 +101,8 @@ test('a service gone from Traefik (container stopped) is down, and up when it re
   await createDevices(world);
   const removed = world.traefik.removeService('single@file');
   await world.hub.pollNow();
+  assert.equal(events(world, TRIGGERS.SERVICE_DOWN).length, 0, 'one read without it is not enough');
+  await world.hub.pollNow();
   assert.equal(events(world, TRIGGERS.SERVICE_DOWN)[0].data.missing, true);
   assert.equal(serviceState(world, 'single@file', SERVICE_KEYS.HEALTHY), 0);
   assert.equal(serviceState(world, 'single@file', SERVICE_KEYS.SERVERS_TOTAL), 0);
@@ -120,6 +122,7 @@ test('a service gone and not added is forgotten after a week', async (t) => {
   const world = await createWorld({ clock });
   t.after(() => world.app.stop());
   world.traefik.removeService('single@file');
+  await world.hub.pollNow();
   await world.hub.pollNow();
   assert.equal(events(world, TRIGGERS.SERVICE_DOWN).length, 1, 'fired, added or not');
   assert.equal(world.hub.services.has('single@file'), false, 'not shown when not added');
@@ -164,6 +167,7 @@ test('a router turning to error fires once, and again after it was fixed and bro
   await world.hub.pollNow();
   world.traefik.setRouterError('app@file', 'again');
   await world.hub.pollNow();
+  await world.hub.pollNow();
   assert.equal(events(world, TRIGGERS.ROUTER_ERROR).length, 2);
 });
 
@@ -202,6 +206,7 @@ test('a restart keeps the last states: a change during it is announced once', as
   const second = await createWorld({ traefik, dataDir: first.dataDir });
   t.after(() => second.app.stop());
   assert.equal(events(second, TRIGGERS.SERVICE_DOWN).length, 1);
+  await second.hub.pollNow(); // a router newly in error: announced at the second read
   assert.equal(events(second, TRIGGERS.ROUTER_ERROR).length, 1);
   await second.hub.store.flush();
   const third = await createWorld({ traefik, dataDir: first.dataDir });
@@ -216,9 +221,45 @@ test('another Traefik address starts afresh: no event for the services of the ol
   other.removeService('app@file');
   world.traefik.removeService('app@file');
   await world.fake.configUpdated({ url: 'http://192.0.2.10:8080/dashboard/', language: 'en' });
+  await world.hub.pollNow();
   assert.equal(events(world, TRIGGERS.SERVICE_DOWN).length, 1, 'same address: still known');
   await world.fake.configUpdated({ url: 'http://198.51.100.7:8080', language: 'en' });
   assert.equal(world.fake.connectionStatus.connected, false, 'nothing answers there');
+  assert.deepEqual(world.fake.discoveredDevices, [], 'the devices of the old Traefik are gone');
+});
+
+test('a restarting Traefik that has not loaded its providers yet fires nothing', async (t) => {
+  const world = await createWorld();
+  t.after(() => world.app.stop());
+  const full = structuredClone(world.traefik.rawdata);
+  world.traefik.failure = 'down';
+  await world.hub.pollNow();
+  world.traefik.failure = null;
+  world.traefik.removeService('app@file');
+  world.traefik.removeService('single@file');
+  world.traefik.setRouterError('app@file', 'middleware "secure-headers@file" does not exist');
+  await world.hub.pollNow();
+  world.traefik.rawdata = full;
+  await world.hub.pollNow();
+  assert.deepEqual(world.fake.sceneEvents, []);
+});
+
+test('down from the first read after a restart: reachable 0 and the unreachable badge', async (t) => {
+  const first = await createWorld();
+  await createDevices(first);
+  await first.app.stop();
+  const traefik = new FakeTraefik();
+  traefik.failure = 'down';
+  const second = await createWorld({
+    traefik,
+    dataDir: first.dataDir,
+    devices: first.fake.devices,
+  });
+  t.after(() => second.app.stop());
+  await second.hub.pollNow();
+  assert.equal(events(second, TRIGGERS.UNREACHABLE).length, 1);
+  assert.equal(proxyState(second, PROXY_KEYS.REACHABLE), 0);
+  assert.equal(second.fake.transports.at(-1).transport, 'unreachable');
 });
 
 test('configuration missing or wrong: a readable status, no request', async (t) => {
@@ -404,4 +445,26 @@ test('the internal timer reads Traefik and publishes the changes, without any po
   }
   assert.ok(world.traefik.requests.length > reads);
   assert.equal(serviceState(world, 'app@file', SERVICE_KEYS.HEALTHY), 0);
+});
+
+test('a damaged /data file does not block the reads', async (t) => {
+  const { writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const first = await createWorld();
+  await first.app.stop();
+  writeFileSync(
+    join(first.dataDir, 'traefik-state.json'),
+    JSON.stringify({
+      url: BASE,
+      initialized: true,
+      reachable: true,
+      services: { 'x@file': null, 'app@file': 'oops' },
+      routers: { 'y@file': 'z' },
+    }),
+  );
+  const second = await createWorld({ dataDir: first.dataDir });
+  t.after(() => second.app.stop());
+  await second.hub.pollNow();
+  assert.equal(second.fake.connectionStatus.connected, true);
+  assert.equal(second.hub.services.size, 2);
 });

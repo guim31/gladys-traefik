@@ -108,7 +108,7 @@ services (devices added to Gladys). **Refresh** reads Traefik at once.
 ### Triggers
 
 - **A service goes down**: an HTTP service no longer has any server up, or is
-  gone from Traefik. Optionally limited to some services. Variables: service
+  gone from Traefik (two reads in a row). Optionally limited to some services. Variables: service
   name, provider, servers up and in total, gone from Traefik.
 - **A service is back up**: a service that was down has a server up again.
   Variables: the same, and the length of the outage in minutes.
